@@ -1,0 +1,108 @@
+import pandas as pd
+
+# variable control panel 
+source_type = 'csv'  # Options: 'csv', 'excel', 'database' can use SQL to pull specific tables. 
+
+# Currently testing with 2024 data
+source_path = r'Data\\transactions_2024.csv'  # Fidelity Full View File / [ ] Connection CIP 
+output_path = r'ETL_Output\\Test_Transactions.csv'
+
+# Extract Phase - Pulling data from a specific file type and specific file path formatted below 
+def extract_data(source_type, source_path = None, db_connection = None, query = None):
+    if source_type == 'csv':
+        df = pd.read_csv(source_path)
+    elif source_type == 'excel':
+        df = pd.read_excel(source_path)
+    elif source_type == 'database':
+        if db_connection and query:
+            df = pd.read_sql(query, db_connection)
+        else:
+            raise ValueError("Database connection and query must be provided!")
+    else:
+        raise ValueError("Unsupported source type!")
+    return df
+
+# Data Transformation Function
+
+def transform(df):
+    # Function for cleaning the Date field
+    df['Date'] = pd.to_datetime(df['Date'])
+    df['Year'] = pd.DatetimeIndex(df['Date']).year
+    df['Quarter'] = pd.DatetimeIndex(df['Date']).quarter
+    df['Month'] = pd.DatetimeIndex(df['Date']).month
+    df['Day'] = pd.DatetimeIndex(df['Date']).day
+    df['Day_of_week'] = df['Date'].dt.day_name()
+
+    # Function for converting the 'Amount' column to numeric values 
+    def convert_amount_to_numeric(amount_str):
+        try:
+            # Check for empty or invalid strings
+            if not amount_str or amount_str in ['-', '']:
+                return 0  # Return 0 for invalid or empty strings
+
+            # Remove dollar sign and commas
+            cleaned_amount = amount_str.replace('$', '').replace(',', '')
+            
+            # Check if the value is negative (in parentheses)
+            if cleaned_amount.startswith('(') and cleaned_amount.endswith(')'):
+                cleaned_amount = '-' + cleaned_amount[1:-1]
+            
+            # Convert to float
+            return float(cleaned_amount)
+        
+        except ValueError as e:
+            # If conversion to float fails
+            print(f"ValueError: Could not convert '{amount_str}' to a number. Error: {e}")
+            return 0  # Or you could return a default value like 0, depending on the use case
+
+        except TypeError as e:
+            # If the input is of an unexpected type
+            print(f"TypeError: Invalid type for amount: {amount_str}. Error: {e}")
+            return 0  # Or return a default value
+
+        except Exception as e:
+            # Catch any other unexpected exceptions
+            print(f"Unexpected error: {e} while processing '{amount_str}'")
+            return 0  # Or return a default value like 0 or raise the error
+
+    # Apply the amount conversion function to the 'Amount' column
+    df['Amount'] = df['Amount'].apply(convert_amount_to_numeric)
+
+    return df
+
+
+# Saving and distributing the data to the end users 
+
+# Load Phase with Permission Handling
+def load_data(df, output_path):
+    try:
+        # Ensure the directory exists
+        output_directory = os.path.dirname(output_path)
+        if not os.path.exists(output_directory):
+            os.makedirs(output_directory)  # Create the directory if it doesn't exist
+
+        # Save the DataFrame to Output folder
+        df.to_csv(output_path, index = False)
+
+    # Next steps: involve saving this data to a sql database
+        # SQLAlchemy python to sql server creating a table
+        #df.to_sql('dbo.Transactions', con = engine, index = False, if_exists = 'replace')
+        
+        print(f"Data saved to {output_path}")
+    
+    except PermissionError as e:
+        print(f"Permission Error: {e}. Ensure you have write access to the directory.")
+    except Exception as e:
+        print(f"An error occurred: {e}")
+
+
+
+df = extract_data(source_type = source_type, source_path = source_path)
+df = transform(df)
+load_data(df, output_path = output_path)
+
+df
+
+
+
+
